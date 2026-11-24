@@ -1,13 +1,16 @@
 import os
 import random
 import sys
+import tempfile
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.algorithms import bfs_connected, connected_groups, kruskal_mst, prim_mst
+from core.algorithms import bfs_connected, connected_groups, kruskal_mst, kruskal_steps, prim_mst, suggest_bridge
 from core.graph import Bridge
 from core.union_find import UnionFind
 from game.level_generator import LEVELS, generate_level
+from game.progress import is_unlocked, load_progress, save_progress
 from game.scoring import efficiency_percent, stars_for_efficiency
 
 passed = 0
@@ -59,6 +62,15 @@ def test_kruskal_known_graph():
     check("biaya MST = 3", sum(e.weight for e in mst) == 3)
 
 
+def test_kruskal_steps():
+    print("Langkah Kruskal")
+    edges = [Bridge(0, 1, 1), Bridge(1, 2, 2), Bridge(0, 2, 3), Bridge(2, 3, 4)]
+    steps = kruskal_steps(edges, 4)
+    check("sisi diperiksa urut dari yang termurah", [e.weight for e, _ in steps] == [1, 2, 3, 4])
+    check("sisi 0-2 ditolak karena membentuk siklus", [ok for _, ok in steps] == [True, True, False, True])
+    check("berhenti setelah n-1 sisi diambil", sum(ok for _, ok in steps) == 3)
+
+
 def test_kruskal_vs_prim():
     print("Kruskal vs Prim-Jarnik (20 graf acak)")
     rng = random.Random(42)
@@ -80,6 +92,18 @@ def test_bfs():
     check("jumlah kelompok dihitung benar", connected_groups([Bridge(0, 1, 1), Bridge(2, 3, 1)], 5) == 3)
 
 
+def test_suggest_bridge():
+    print("Saran jembatan")
+    edges = [Bridge(0, 1, 5), Bridge(1, 2, 3), Bridge(0, 2, 1), Bridge(2, 3, 9)]
+    edges[2].selected = True
+    pick = suggest_bridge(edges, 4)
+    check("memilih sisi termurah yang menyambung dua kelompok", pick is edges[1])
+    edges[1].selected = True
+    check("tidak menyarankan sisi yang membuat siklus", suggest_bridge(edges, 4) is edges[3])
+    edges[3].selected = True
+    check("tidak ada saran jika sudah terhubung", suggest_bridge(edges, 4) is None)
+
+
 def test_scoring():
     print("Skor")
     check("biaya sama dengan optimal = 100%", efficiency_percent(120, 120) == 100)
@@ -87,6 +111,20 @@ def test_scoring():
     check("95% dapat 3 bintang", stars_for_efficiency(95) == 3)
     check("80% dapat 2 bintang", stars_for_efficiency(80) == 2)
     check("di bawah 80% dapat 1 bintang", stars_for_efficiency(79) == 1)
+
+
+def test_progress():
+    print("Simpan progres")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "save.json"
+        check("file belum ada -> progres kosong", load_progress(path) == {})
+        save_progress({0: 3, 1: 2}, path)
+        check("progres tersimpan dan terbaca lagi", load_progress(path) == {0: 3, 1: 2})
+        path.write_text("bukan json", encoding="utf-8")
+        check("file rusak tidak membuat game crash", load_progress(path) == {})
+    check("level 1 selalu terbuka", is_unlocked({}, 0))
+    check("level 2 terkunci sebelum level 1 selesai", not is_unlocked({}, 1))
+    check("level 2 terbuka setelah level 1 selesai", is_unlocked({0: 1}, 1))
 
 
 def test_levels():
@@ -108,9 +146,12 @@ def test_levels():
 if __name__ == "__main__":
     test_union_find()
     test_kruskal_known_graph()
+    test_kruskal_steps()
     test_kruskal_vs_prim()
     test_bfs()
+    test_suggest_bridge()
     test_scoring()
+    test_progress()
     test_levels()
     print(f"\n{passed} lulus, {failed} gagal")
     sys.exit(1 if failed else 0)

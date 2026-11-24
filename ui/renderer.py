@@ -277,7 +277,7 @@ class Renderer:
     def clear(self, surface):
         surface.fill(colors.BACKGROUND)
 
-    def draw_map(self, surface, level, t, hover=None, mst=None, storm_rate=1.6):
+    def draw_map(self, surface, level, t, hover=None, hint=None, mst=None, current=None, compare=False, storm_rate=1.6):
         rect = layout.MAP_RECT
         surface.blit(self.map_sea, rect.topleft)
         surface.set_clip(rect)
@@ -289,12 +289,20 @@ class Renderer:
         pts = [(ox + i.x, oy + i.y) for i in level.islands]
         reveal = mst is not None
         mst = mst or set()
+        step_edge, step_ok = current if current else (None, False)
 
         self.fx.fill((0, 0, 0, 0))
         for e in level.edges:
             p1, p2 = pts[e.a], pts[e.b]
+            if e is step_edge:
+                pygame.draw.line(self.fx, colors.HINT + (200,), p1, p2, 20)
             if e in mst:
                 pygame.draw.line(self.fx, colors.OPTIMAL + (170,), p1, p2, 24)
+            elif e.selected and compare:
+                pygame.draw.line(self.fx, colors.DANGER + (190,), p1, p2, 24)
+            elif not reveal and e is hint:
+                pulse = int(130 + 90 * math.sin(t * 8))
+                pygame.draw.line(self.fx, colors.HINT + (pulse,), p1, p2, 16)
             elif not reveal and e is hover:
                 pygame.draw.line(self.fx, colors.HOVER + (170,), p1, p2, 12)
         surface.blit(self.fx, (0, 0))
@@ -303,7 +311,9 @@ class Renderer:
             if e.selected:
                 continue
             p1, p2 = pts[e.a], pts[e.b]
-            if e in mst:
+            if e is step_edge:
+                pygame.draw.line(surface, colors.OPTIMAL if step_ok else colors.DANGER, p1, p2, 4)
+            elif e in mst:
                 pygame.draw.line(surface, colors.OPTIMAL, p1, p2, 4)
             elif reveal:
                 dashed_line(surface, colors.ROPE_FADED, p1, p2)
@@ -322,6 +332,8 @@ class Renderer:
             mid = ((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2)
             if e.selected:
                 self._pill(surface, str(e.locked_cost), mid, colors.PAPER, colors.WOOD_DARK, colors.WOOD_DARK)
+            elif e is step_edge:
+                self._pill(surface, str(e.weight), mid, colors.INK, colors.HINT, colors.WOOD)
             elif e in mst:
                 self._pill(surface, str(e.weight), mid, (255, 255, 255), colors.OPTIMAL, colors.OPTIMAL)
             elif reveal:
@@ -329,7 +341,7 @@ class Renderer:
             elif e.storm:
                 box = self._pill(surface, str(e.current_cost(storm_rate)), mid, (255, 255, 255), colors.STORM, colors.STORM_EDGE)
                 self._cloud(surface, box.right + 9, box.top - 2)
-            elif e is hover:
+            elif e is hover or e is hint:
                 self._pill(surface, str(e.weight), mid, colors.INK, colors.HOVER_PILL, colors.WOOD)
             else:
                 self._pill(surface, str(e.weight), mid, colors.MUTED, colors.PAPER, colors.PAPER_EDGE)
@@ -337,7 +349,7 @@ class Renderer:
         surface.set_clip(None)
         pygame.draw.rect(surface, colors.CARD_SHADOW, rect, 2, border_radius=14)
 
-    def draw_hud(self, surface, level, spent):
+    def draw_hud(self, surface, level, spent, time_left, t):
         r = layout.HUD_RECT
         self._panel(surface, r)
         top = r.top + 10
@@ -365,6 +377,13 @@ class Renderer:
         self._text(surface, self.label, "CUACA", colors.MUTED, (x, top))
         weather, tone = ("Badai", colors.STORM) if level.storms else ("Cerah", colors.INK)
         self._text(surface, self.bold, weather, tone, (x, top + 16))
+
+        if time_left is not None:
+            x = r.left + 800
+            self._text(surface, self.label, "WAKTU", colors.MUTED, (x, top))
+            secs = max(0, math.ceil(time_left))
+            blink = time_left <= 15 and int(t * 4) % 2 == 0
+            self._text(surface, self.bold, f"{secs // 60}:{secs % 60:02d}", colors.DANGER if blink else colors.INK, (x, top + 16))
 
     def draw_status(self, surface, text, good):
         r = layout.STATUS_RECT
@@ -429,6 +448,8 @@ class Renderer:
             ("Biaya kamu", str(result["spent"])),
             ("Biaya optimal (Kruskal)", str(result["optimal"])),
             ("Efisiensi", f"{result['efficiency']}%"),
+            ("Jembatan yang sama dengan MST", f"{result['matched']} dari {result['needed']}"),
+            ("Saran dipakai", str(result["hints"])),
         ]
         y = top + 166
         for i, (name, value) in enumerate(rows):
@@ -441,19 +462,35 @@ class Renderer:
 
         self.draw_button(surface, layout.CARD_LEFT_BUTTON, "Ulangi  (R)", mouse)
         self.draw_button(surface, layout.CARD_RIGHT_BUTTON, "Selesai" if last_level else "Lanjut  (Spasi)", mouse, primary=True)
+        self._centered(surface, self.small, "Tekan V untuk melihat peta perbandingan", colors.MUTED, cx, card.bottom - 26)
 
-    def draw_complete(self, surface, mouse):
+    def draw_time_up(self, surface, mouse):
+        surface.blit(self.shade, (0, 0))
+        card = layout.SMALL_CARD_RECT
+        self._card(surface, card)
+        cx, top = card.centerx, card.top + 26
+        self._centered(surface, self.label, "WAKTU HABIS", colors.DANGER, cx, top)
+        self._centered(surface, self.big, "Belum sempat tersambung", colors.INK, cx, top + 18)
+        self._centered(surface, self.body, "Jaringan harus selesai sebelum timer habis.", colors.MUTED, cx, top + 70)
+        self._centered(surface, self.body, "Coba fokus ke jembatan murah dulu.", colors.MUTED, cx, top + 94)
+        self.draw_button(surface, layout.SMALL_LEFT_BUTTON, "Coba lagi", mouse, primary=True)
+        self.draw_button(surface, layout.SMALL_RIGHT_BUTTON, "Menu", mouse)
+
+    def draw_complete(self, surface, total, best, mouse):
         surface.blit(self.shade, (0, 0))
         card = layout.SMALL_CARD_RECT
         self._card(surface, card)
         cx, top = card.centerx, card.top + 26
         self._centered(surface, self.label, "SEMUA LEVEL SELESAI", colors.OPTIMAL, cx, top)
         self._centered(surface, self.big, "Semua pulau sudah terhubung", colors.INK, cx, top + 18)
-        self._centered(surface, self.body, "Kamu sudah menyelesaikan kelima level.", colors.MUTED, cx, top + 74)
-        self._centered(surface, self.body, "Main lagi untuk mengejar efisiensi 100%.", colors.MUTED, cx, top + 98)
+        img = self.big.render(f"{total} / {best}", True, colors.INK)
+        box = img.get_rect(midtop=(cx + 18, top + 74))
+        surface.blit(img, box)
+        self._star(surface, (box.left - 22, box.centery), 16, True)
+        self._centered(surface, self.small, "Bintang yang belum penuh bisa dikejar lagi dari menu.", colors.MUTED, cx, top + 120)
         self.draw_button(surface, layout.SMALL_WIDE_BUTTON, "Kembali ke menu", mouse, primary=True)
 
-    def draw_menu(self, surface, t, mouse, version):
+    def draw_menu(self, surface, t, levels, mouse, version):
         surface.blit(self.menu_sea, (0, 0))
         self._draw_waves(surface, self.menu_waves, t)
         for islands, mst, art in self.decor:
@@ -471,10 +508,43 @@ class Renderer:
         surface.blit(title, spot)
         self._centered(surface, self.body, "Hubungkan semua pulau dengan jembatan, sehemat mungkin.", colors.PAPER, spot.centerx, spot.bottom + 4)
 
-        self.draw_button(surface, layout.START_BUTTON, "Main", mouse, primary=True)
+        for i, rect in enumerate(layout.menu_cards(len(levels))):
+            self._level_card(surface, rect, i, levels[i], mouse)
 
-        foot = self.small.render("Enter untuk mulai   ·   ESC untuk keluar", True, colors.PAPER)
+        foot = self.small.render("Klik level untuk bermain   ·   ESC untuk keluar", True, colors.PAPER)
         surface.blit(foot, foot.get_rect(center=(layout.SCREEN_SIZE[0] // 2, 598)))
         tag = self.small.render(f"v{version}", True, colors.PAPER)
         surface.blit(tag, tag.get_rect(bottomright=(layout.SCREEN_SIZE[0] - 12, layout.SCREEN_SIZE[1] - 8)))
 
+    def _level_card(self, surface, rect, index, info, mouse):
+        locked = not info["unlocked"]
+        hot = not locked and rect.collidepoint(mouse)
+        box = rect.move(0, -3) if hot else rect
+        pygame.draw.rect(surface, colors.CARD_SHADOW, rect.move(0, 5), border_radius=14)
+        pygame.draw.rect(surface, colors.PAPER, box, border_radius=14)
+        pygame.draw.rect(surface, colors.TEAL if hot else colors.PAPER_EDGE, box, 2 if hot else 1, border_radius=14)
+
+        badge = (box.left + 34, box.top + 36)
+        pygame.draw.circle(surface, colors.DISABLED_TEXT if locked else colors.TEAL, badge, 18)
+        num = self.bold.render(str(index + 1), True, colors.PAPER)
+        surface.blit(num, num.get_rect(center=badge))
+
+        self._text(surface, self.bold, info["name"], colors.INK, (box.left + 64, box.top + 16))
+        details = [f"{info['islands']} pulau"]
+        if info["storms"]:
+            details.append("badai")
+        if info["time_limit"]:
+            details.append(f"{info['time_limit']} detik")
+        self._text(surface, self.small, "  ·  ".join(details), colors.MUTED, (box.left + 64, box.top + 40))
+
+        for k in range(3):
+            self._star(surface, (box.left + 30 + k * 26, box.bottom - 26), 10, k < info["stars"])
+
+        if locked:
+            veil = pygame.Surface(box.size, pygame.SRCALPHA)
+            pygame.draw.rect(veil, (238, 232, 218, 165), veil.get_rect(), border_radius=14)
+            surface.blit(veil, box.topleft)
+            lx, ly = box.right - 40, box.bottom - 40
+            pygame.draw.arc(surface, colors.MUTED, (lx + 2, ly - 9, 14, 16), 0, math.pi, 3)
+            pygame.draw.rect(surface, colors.MUTED, (lx, ly, 18, 14), border_radius=3)
+            self._text(surface, self.small, "Terkunci", colors.MUTED, (box.right - 104, box.bottom - 37))

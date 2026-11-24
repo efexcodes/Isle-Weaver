@@ -8,11 +8,12 @@ from core.graph import Bridge, Island
 from core.union_find import UnionFind
 
 LEVELS = [
-    {"name": "Gugus Pemula", "islands": 6, "k": 3, "storms": False},
-    {"name": "Selat Kembar", "islands": 8, "k": 3, "storms": False},
-    {"name": "Teluk Sunyi", "islands": 10, "k": 3, "storms": False},
-    {"name": "Musim Badai", "islands": 12, "k": 3, "storms": True},
-    {"name": "Mata Angin", "islands": 14, "k": 4, "storms": True},
+    {"name": "Gugus Pemula", "islands": 6, "k": 3, "storms": False, "time_limit": None},
+    {"name": "Selat Kembar", "islands": 8, "k": 3, "storms": False, "time_limit": None},
+    {"name": "Teluk Sunyi", "islands": 10, "k": 3, "storms": False, "time_limit": None},
+    {"name": "Musim Badai", "islands": 12, "k": 3, "storms": True, "time_limit": None},
+    {"name": "Mata Angin", "islands": 14, "k": 4, "storms": True, "time_limit": None},
+    {"name": "Pacu Waktu", "islands": 16, "k": 4, "storms": True, "time_limit": 90},
 ]
 
 MARGIN = 58
@@ -31,6 +32,7 @@ class Level:
     budget: int
     optimal_cost: int
     storms: bool
+    time_limit: int | None
 
 
 def _random_spot(index, width, height, rng):
@@ -92,4 +94,4 @@ def generate_level(index, width, height, rng=None):
     edges = [Bridge(a, b, w) for (a, b), w in chosen.items()]
     optimal = sum(e.weight for e in kruskal_mst(edges, n))
     budget = math.ceil(optimal * BUDGET_SLACK / 10) * 10
-    return Level(index, cfg["name"], islands, edges, budget, optimal, cfg["storms"])
+    return Level(index, cfg["name"], islands, edges, budget, optimal, cfg["storms"], cfg["time_limit"])

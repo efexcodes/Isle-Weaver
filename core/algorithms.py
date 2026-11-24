@@ -5,15 +5,21 @@ from itertools import count
 from .union_find import UnionFind
 
 
-def kruskal_mst(edges, n):
+def kruskal_steps(edges, n):
     uf = UnionFind(n)
-    mst = []
+    steps = []
+    taken = 0
     for e in sorted(edges, key=lambda e: e.weight):
-        if len(mst) == n - 1:
+        if taken == n - 1:
             break
-        if uf.union(e.a, e.b):
-            mst.append(e)
-    return mst
+        joined = uf.union(e.a, e.b)
+        steps.append((e, joined))
+        taken += joined
+    return steps
+
+
+def kruskal_mst(edges, n):
+    return [e for e, joined in kruskal_steps(edges, n) if joined]
 
 
 def prim_mst(edges, n, start=0):
@@ -67,3 +73,18 @@ def connected_groups(edges, n):
 
 def bfs_connected(edges, n):
     return connected_groups(edges, n) <= 1
+
+
+def suggest_bridge(edges, n, cost=lambda e: e.weight):
+    uf = UnionFind(n)
+    for e in edges:
+        if e.selected:
+            uf.union(e.a, e.b)
+
+    best = None
+    for e in edges:
+        if e.selected or uf.connected(e.a, e.b):
+            continue
+        if best is None or cost(e) < cost(best):
+            best = e
+    return best
