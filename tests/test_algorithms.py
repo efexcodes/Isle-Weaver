@@ -4,7 +4,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.algorithms import bfs_connected, kruskal_mst
+from core.algorithms import bfs_connected, connected_groups, kruskal_mst, prim_mst
 from core.graph import Bridge
 from core.union_find import UnionFind
 from game.level_generator import LEVELS, generate_level
@@ -22,6 +22,20 @@ def check(name, condition):
     else:
         failed += 1
         print(f"  [FAIL] {name}")
+
+
+def random_graph(rng, n, density=0.5):
+    edges = []
+    seen = set()
+    for i in range(n):
+        for j in range(i + 1, n):
+            if rng.random() < density:
+                edges.append(Bridge(i, j, rng.randint(1, 50)))
+                seen.add((i, j))
+    for i in range(n - 1):
+        if (i, i + 1) not in seen:
+            edges.append(Bridge(i, i + 1, rng.randint(1, 50)))
+    return edges
 
 
 def test_union_find():
@@ -45,6 +59,17 @@ def test_kruskal_known_graph():
     check("biaya MST = 3", sum(e.weight for e in mst) == 3)
 
 
+def test_kruskal_vs_prim():
+    print("Kruskal vs Prim-Jarnik (20 graf acak)")
+    rng = random.Random(42)
+    for trial in range(20):
+        n = rng.randint(4, 14)
+        edges = random_graph(rng, n)
+        k = sum(e.weight for e in kruskal_mst(edges, n))
+        p = sum(e.weight for e in prim_mst(edges, n))
+        check(f"graf {trial + 1}: kruskal={k} prim={p}", k == p)
+
+
 def test_bfs():
     print("BFS keterhubungan")
     chain = [Bridge(0, 1, 1), Bridge(1, 2, 1)]
@@ -52,6 +77,7 @@ def test_bfs():
     check("rantai 0-1-2 tidak terhubung jika ada pulau ke-4", not bfs_connected(chain, 4))
     check("satu pulau tanpa jembatan dianggap terhubung", bfs_connected([], 1))
     check("dua pulau tanpa jembatan tidak terhubung", not bfs_connected([], 2))
+    check("jumlah kelompok dihitung benar", connected_groups([Bridge(0, 1, 1), Bridge(2, 3, 1)], 5) == 3)
 
 
 def test_scoring():
@@ -73,6 +99,7 @@ def test_levels():
             ok_count &= n == cfg["islands"]
             ok_conn &= bfs_connected(level.edges, n)
             ok_budget &= level.optimal_cost <= level.budget <= level.optimal_cost * 2
+            ok_budget &= level.optimal_cost == sum(e.weight for e in prim_mst(level.edges, n))
         check(f"level {i + 1}: jumlah pulau = {cfg['islands']}", ok_count)
         check(f"level {i + 1}: graf kandidat selalu terhubung", ok_conn)
         check(f"level {i + 1}: anggaran cukup tapi tidak berlebihan", ok_budget)
@@ -81,6 +108,7 @@ def test_levels():
 if __name__ == "__main__":
     test_union_find()
     test_kruskal_known_graph()
+    test_kruskal_vs_prim()
     test_bfs()
     test_scoring()
     test_levels()

@@ -8,9 +8,11 @@ from core.graph import Bridge, Island
 from core.union_find import UnionFind
 
 LEVELS = [
-    {"name": "Gugus Pemula", "islands": 6, "k": 3},
-    {"name": "Selat Kembar", "islands": 8, "k": 3},
-    {"name": "Teluk Sunyi", "islands": 10, "k": 3},
+    {"name": "Gugus Pemula", "islands": 6, "k": 3, "storms": False},
+    {"name": "Selat Kembar", "islands": 8, "k": 3, "storms": False},
+    {"name": "Teluk Sunyi", "islands": 10, "k": 3, "storms": False},
+    {"name": "Musim Badai", "islands": 12, "k": 3, "storms": True},
+    {"name": "Mata Angin", "islands": 14, "k": 4, "storms": True},
 ]
 
 MARGIN = 58
@@ -28,6 +30,7 @@ class Level:
     edges: list
     budget: int
     optimal_cost: int
+    storms: bool
 
 
 def _random_spot(index, width, height, rng):
@@ -89,4 +92,4 @@ def generate_level(index, width, height, rng=None):
     edges = [Bridge(a, b, w) for (a, b), w in chosen.items()]
     optimal = sum(e.weight for e in kruskal_mst(edges, n))
     budget = math.ceil(optimal * BUDGET_SLACK / 10) * 10
-    return Level(index, cfg["name"], islands, edges, budget, optimal)
+    return Level(index, cfg["name"], islands, edges, budget, optimal, cfg["storms"])
